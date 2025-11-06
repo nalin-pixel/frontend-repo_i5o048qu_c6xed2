@@ -1,10 +1,11 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import Hero from './components/Hero';
 import ProductGrid from './components/ProductGrid';
 import Cart from './components/Cart';
 import ProductModal from './components/ProductModal';
+import Header from './components/Header';
 
-const SAMPLE_PRODUCTS = [
+const FALLBACK_PRODUCTS = [
   {
     id: 'glass-01',
     name: 'Glass No. 1',
@@ -12,7 +13,8 @@ const SAMPLE_PRODUCTS = [
     rating: 4.8,
     reviews: 214,
     notes: 'Iridescent citrus with crystalline musk.',
-    image: 'https://images.unsplash.com/photo-1584961818182-12c443d7d1fc?ixid=M3w3OTkxMTl8MHwxfHNlYXJjaHwxfHxHbGFzcyUyME5vLiUyMDF8ZW58MHwwfHx8MTc2MjQzMjI3OXww&ixlib=rb-4.1.0&w=1600&auto=format&fit=crop&q=80',
+    image:
+      'https://images.unsplash.com/photo-1584961818182-12c443d7d1fc?ixid=M3w3OTkxMTl8MHwxfHNlYXJjaHwxfHxHbGFzcyUyME5vLiUyMDF8ZW58MHwwfHx8MTc2MjQzMjI3OXww&ixlib=rb-4.1.0&w=1600&auto=format&fit=crop&q=80',
     description:
       'A luminous blend of yuzu zest, white tea, and clean musk. Minimal yet expressive — like light passing through frosted glass.',
     topNotes: ['Yuzu', 'White Tea', 'Pear'],
@@ -38,7 +40,8 @@ const SAMPLE_PRODUCTS = [
     rating: 4.9,
     reviews: 298,
     notes: 'Sheer vanilla with airy iris and salt.',
-    image: 'https://images.unsplash.com/photo-1643114451805-f14ea7bb0dfb?ixid=M3w3OTkxMTl8MHwxfHNlYXJjaHwxfHxHbGFzcyUyME5vLiUyMDN8ZW58MHwwfHx8MTc2MjQzMjI4MHww&ixlib=rb-4.1.0&w=1600&auto=format&fit=crop&q=80',
+    image:
+      'https://images.unsplash.com/photo-1643114451805-f14ea7bb0dfb?ixid=M3w3OTkxMTl8MHwxfHNlYXJjaHwxfHxHbGFzcyUyME5vLiUyMDN8ZW58MHwwfHx8MTc2MjQzMjI4MHww&ixlib=rb-4.1.0&w=1600&auto=format&fit=crop&q=80',
     description:
       'Weightless warmth: a drift of vanilla absolute lifted by iris and a hint of sea salt for that radiant-skin feeling.',
     topNotes: ['Iris', 'Sea Salt'],
@@ -49,61 +52,100 @@ const SAMPLE_PRODUCTS = [
 export default function App() {
   const [cart, setCart] = useState([]);
   const [selected, setSelected] = useState(null);
+  const [products, setProducts] = useState(FALLBACK_PRODUCTS);
+  const [loading, setLoading] = useState(false);
 
-  const products = useMemo(() => SAMPLE_PRODUCTS, []);
+  const API_BASE = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        setLoading(true);
+        const res = await fetch(`${API_BASE}/products`);
+        if (!res.ok) throw new Error('Failed to load products');
+        const data = await res.json();
+        if (data && Array.isArray(data.items) && data.items.length) {
+          setProducts(data.items);
+        }
+      } catch (e) {
+        // Fallback silently to local list
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, [API_BASE]);
 
   const addToCart = (product) => {
     setCart((prev) => {
-      const existing = prev.find((p) => p.id === product.id);
+      const existing = prev.find((p) => p.name === product.name);
       if (existing) {
-        return prev.map((p) => (p.id === product.id ? { ...p, qty: p.qty + 1 } : p));
+        return prev.map((p) => (p.name === product.name ? { ...p, qty: p.qty + 1 } : p));
       }
       return [...prev, { ...product, qty: 1 }];
     });
   };
 
-  const removeFromCart = (id) => {
-    setCart((prev) => prev.filter((p) => p.id !== id));
+  const removeFromCart = (idOrName) => {
+    setCart((prev) => prev.filter((p) => (p.id ? p.id !== idOrName : p.name !== idOrName)));
   };
 
-  const handleCheckout = () => {
-    // In a full app, this would redirect to payment. Here we simply simulate.
-    alert('Checkout successful! Thank you for your order.');
-    setCart([]);
+  const handleCheckout = async () => {
+    if (cart.length === 0) return;
+    try {
+      const payload = {
+        items: cart.map((i) => ({ name: i.name, qty: i.qty })),
+        customer: {
+          name: 'Guest',
+          email: 'guest@example.com',
+          address: 'Online Order',
+        },
+      };
+      const res = await fetch(`${API_BASE}/checkout`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.detail || 'Payment failed');
+      alert(`Payment successful! Order #${data.order_id} — $${data.subtotal.toFixed(2)}`);
+      setCart([]);
+    } catch (e) {
+      alert(`Checkout error: ${e.message}`);
+    }
   };
+
+  const cartCount = useMemo(() => cart.reduce((n, i) => n + i.qty, 0), [cart]);
 
   return (
     <div className="min-h-screen bg-white">
-      {/* Header */}
-      <header className="sticky top-0 z-40 w-full border-b border-zinc-200 bg-white/70 backdrop-blur">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
-          <a href="#" className="text-lg font-semibold tracking-tight text-zinc-900">atelier.glass</a>
-          <nav className="hidden gap-6 text-sm text-zinc-700 sm:flex">
-            <a href="#collection" className="hover:text-zinc-900">Collection</a>
-            <a href="#about" className="hover:text-zinc-900">About</a>
-            <a href="#support" className="hover:text-zinc-900">Support</a>
-          </nav>
-          <div className="text-sm font-medium text-zinc-700">Cart ({cart.reduce((n, i) => n + i.qty, 0)})</div>
-        </div>
-      </header>
-
-      {/* Hero with Spline */}
-      <Hero onShopNow={() => {
+      <Header cartCount={cartCount} onCartClick={() => {
         const el = document.getElementById('collection');
         el?.scrollIntoView({ behavior: 'smooth' });
       }} />
 
-      {/* Main Content */}
+      <Hero
+        onShopNow={() => {
+          const el = document.getElementById('collection');
+          el?.scrollIntoView({ behavior: 'smooth' });
+        }}
+      />
+
       <main className="mx-auto grid max-w-7xl grid-cols-1 gap-8 px-6 pb-24 md:grid-cols-3">
         <div className="md:col-span-2">
-          <ProductGrid products={products} onAddToCart={addToCart} onView={setSelected} />
+          {loading ? (
+            <section id="collection" className="mx-auto max-w-7xl px-6 py-16">
+              <p className="text-sm text-zinc-600">Loading collection…</p>
+            </section>
+          ) : (
+            <ProductGrid products={products} onAddToCart={addToCart} onView={setSelected} />
+          )}
         </div>
         <div className="md:col-span-1">
-          <Cart items={cart} onRemove={removeFromCart} onCheckout={handleCheckout} />
+          <Cart items={cart} onRemove={(key) => removeFromCart(key)} onCheckout={handleCheckout} />
         </div>
       </main>
 
-      {/* Footer */}
       <footer id="about" className="border-t border-zinc-200 bg-white py-12">
         <div className="mx-auto max-w-7xl px-6">
           <div className="grid grid-cols-1 gap-8 sm:grid-cols-3">
